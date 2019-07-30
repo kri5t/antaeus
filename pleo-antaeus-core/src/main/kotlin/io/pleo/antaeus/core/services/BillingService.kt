@@ -16,7 +16,7 @@ class BillingService(
    fun payAllInvoices() {
         dal.fetchInvoices()
             .filter { invoice -> invoice.status == InvoiceStatus.PENDING }
-            .forEach { invoice -> payInvoice(invoice)  }
+            .forEach { invoice -> payInvoice(invoice) }
    }
 
     private fun payInvoice(invoice: Invoice){

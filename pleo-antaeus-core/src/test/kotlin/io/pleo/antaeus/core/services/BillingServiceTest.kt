@@ -13,9 +13,11 @@ import org.junit.jupiter.api.Test
 
 class BillingServiceTest {
     private val pendingInvoice = Invoice(1, 1, Money(10.toBigDecimal(), Currency.EUR), InvoiceStatus.PENDING)
+    private val paidInvoice = Invoice(2, 2, Money(12.toBigDecimal(), Currency.DKK), InvoiceStatus.PAID)
 
     private val dal = mockk<AntaeusDal> {
         every { fetchInvoices() } returns listOf(pendingInvoice)
+        every { updateInvoice(any(), any()) } returns Unit
     }
 
     private val paymentProvider = mockk<PaymentProvider> {
@@ -32,6 +34,17 @@ class BillingServiceTest {
         }
         verify(exactly = 1) {
             dal.updateInvoice(pendingInvoice.id, InvoiceStatus.PAID)
+        }
+    }
+
+    @Test
+    fun `will NOT call dal to set status to paid, when invoice is already paid`() {
+        sut.payAllInvoices()
+        verify(exactly = 0) {
+            paymentProvider.charge(paidInvoice)
+        }
+        verify(exactly = 0) {
+            dal.updateInvoice(paidInvoice.id, InvoiceStatus.PAID)
         }
     }
 }
