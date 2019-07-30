@@ -7,10 +7,7 @@ import io.pleo.antaeus.core.external.PaymentProvider
 import io.pleo.antaeus.data.AntaeusDal
 import io.pleo.antaeus.models.Invoice
 import io.pleo.antaeus.models.InvoiceStatus
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 import mu.KotlinLogging
 
 class BillingService(
@@ -28,14 +25,16 @@ class BillingService(
             .forEach { invoice -> payInvoice(invoice) }
    }
 
-    private fun payInvoice(invoice: Invoice){
+    private fun payInvoice(invoice: Invoice, attempt: Int = 0){
         GlobalScope.launch  {
             try {
                 val paid = withContext(Dispatchers.Default) { paymentProvider.charge(invoice) }
                 if (paid)
                     dal.updateInvoice(invoice.id, InvoiceStatus.PAID)
+                else
+                    dal.updateInvoice(invoice.id, InvoiceStatus.ERROR)
             } catch(e: Exception){
-                handleException(e, invoice)
+                handleException(e, invoice, attempt)
             }
         }
     }
@@ -48,7 +47,7 @@ class BillingService(
      *
      * If the code throws exception we don't know how to handle it, and will rethrow it
      */
-    private fun handleException(e: Exception, invoice: Invoice) {
+    private suspend fun handleException(e: Exception, invoice: Invoice, attempt: Int) {
         when(e) {
             is CustomerNotFoundException -> {
                 logger.error { "Payment provider was not able to identify customer with id ${invoice.customerId} " +
@@ -60,7 +59,14 @@ class BillingService(
                 dal.updateInvoice(invoice.id, InvoiceStatus.ERROR)
             }
             is NetworkException -> {
-                //TODO handle error
+                //If it is a network exception we will retry 5 times before giving up
+                if(attempt < 5){
+                    delay((1000 * attempt).toLong())
+                    payInvoice(invoice, attempt + 1)
+                } else {
+                    logger.error { "Failed to pay invoice id: ${invoice.id}. After $attempt retries" }
+                    dal.updateInvoice(invoice.id, InvoiceStatus.ERROR)
+                }
             }
             else -> throw e
         }

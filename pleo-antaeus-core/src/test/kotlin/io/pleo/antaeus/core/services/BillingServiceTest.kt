@@ -65,6 +65,19 @@ class BillingServiceTest {
     }
 
     @Test
+    fun `will call dal to set status to ERROR, when PaymentProvider returns false`() {
+        every { paymentProvider.charge(any()) } returns false
+
+        sut.payAllInvoices()
+        verify(exactly = 1) {
+            paymentProvider.charge(pendingInvoice)
+        }
+        verify(exactly = 1) {
+            dal.updateInvoice(pendingInvoice.id, InvoiceStatus.ERROR)
+        }
+    }
+
+    @Test
     fun `will NOT call dal to set status to PAID, when PaymentProvider throws CustomerNotFoundException`() {
         every { paymentProvider.charge(pendingInvoice) } throws CustomerNotFoundException(pendingInvoice.id)
 
@@ -117,13 +130,20 @@ class BillingServiceTest {
     }
 
     @Test
+    fun `will call dal to set status to ERROR, when PaymentProvider throws NetworkException`() {
+        every { paymentProvider.charge(pendingInvoice) } throws NetworkException()
+
+        sut.payAllInvoices()
+        verify(exactly = 0) {
+            dal.updateInvoice(pendingInvoice.id, InvoiceStatus.ERROR)
+        }
+    }
+
+    @Test
     fun `will NOT call dal to set status to PAID, when PaymentProvider throws NetworkException`() {
         every { paymentProvider.charge(pendingInvoice) } throws NetworkException()
 
         sut.payAllInvoices()
-        verify(exactly = 1) {
-            paymentProvider.charge(pendingInvoice)
-        }
         verify(exactly = 0) {
             dal.updateInvoice(pendingInvoice.id, InvoiceStatus.PAID)
         }
