@@ -3,6 +3,9 @@ package io.pleo.antaeus.core.services
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import io.pleo.antaeus.core.exceptions.CurrencyMismatchException
+import io.pleo.antaeus.core.exceptions.CustomerNotFoundException
+import io.pleo.antaeus.core.exceptions.NetworkException
 import io.pleo.antaeus.core.external.PaymentProvider
 import io.pleo.antaeus.data.AntaeusDal
 import io.pleo.antaeus.models.Currency
@@ -45,6 +48,58 @@ class BillingServiceTest {
         }
         verify(exactly = 0) {
             dal.updateInvoice(paidInvoice.id, InvoiceStatus.PAID)
+        }
+    }
+
+    @Test
+    fun `will NOT call dal to set status to paid, when PaymentProvider returns false`() {
+        every { paymentProvider.charge(any()) } returns false
+
+        sut.payAllInvoices()
+        verify(exactly = 1) {
+            paymentProvider.charge(pendingInvoice)
+        }
+        verify(exactly = 0) {
+            dal.updateInvoice(pendingInvoice.id, InvoiceStatus.PAID)
+        }
+    }
+
+    @Test
+    fun `will NOT call dal to set status to paid, when PaymentProvider throws CustomerNotFoundException`() {
+        every { paymentProvider.charge(pendingInvoice) } throws CustomerNotFoundException(pendingInvoice.id)
+
+        sut.payAllInvoices()
+        verify(exactly = 1) {
+            paymentProvider.charge(pendingInvoice)
+        }
+        verify(exactly = 0) {
+            dal.updateInvoice(pendingInvoice.id, InvoiceStatus.PAID)
+        }
+    }
+
+    @Test
+    fun `will NOT call dal to set status to paid, when PaymentProvider throws CurrencyMismatchException`() {
+        every { paymentProvider.charge(pendingInvoice) } throws CurrencyMismatchException(pendingInvoice.id, pendingInvoice.customerId)
+
+        sut.payAllInvoices()
+        verify(exactly = 1) {
+            paymentProvider.charge(pendingInvoice)
+        }
+        verify(exactly = 0) {
+            dal.updateInvoice(pendingInvoice.id, InvoiceStatus.PAID)
+        }
+    }
+
+    @Test
+    fun `will NOT call dal to set status to paid, when PaymentProvider throws NetworkException`() {
+        every { paymentProvider.charge(pendingInvoice) } throws NetworkException()
+
+        sut.payAllInvoices()
+        verify(exactly = 1) {
+            paymentProvider.charge(pendingInvoice)
+        }
+        verify(exactly = 0) {
+            dal.updateInvoice(pendingInvoice.id, InvoiceStatus.PAID)
         }
     }
 }
