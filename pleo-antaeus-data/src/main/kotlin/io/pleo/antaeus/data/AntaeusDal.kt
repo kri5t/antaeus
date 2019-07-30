@@ -80,4 +80,8 @@ class AntaeusDal(private val db: Database) {
 
         return fetchCustomer(id!!)
     }
+
+    fun updateInvoice(id: Int, paid: InvoiceStatus) {
+        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+    }
 }
