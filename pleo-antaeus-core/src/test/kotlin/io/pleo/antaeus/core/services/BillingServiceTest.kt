@@ -30,7 +30,7 @@ class BillingServiceTest {
     private val sut = BillingService(dal = dal, paymentProvider = paymentProvider)
 
     @Test
-    fun `will call dal to set status to paid`() {
+    fun `will call dal to set status to PAID`() {
         sut.payAllInvoices()
         verify(exactly = 1) {
             paymentProvider.charge(pendingInvoice)
@@ -41,7 +41,7 @@ class BillingServiceTest {
     }
 
     @Test
-    fun `will NOT call dal to set status to paid, when invoice is already paid`() {
+    fun `will NOT call dal to set status to PAID, when invoice is already paid`() {
         sut.payAllInvoices()
         verify(exactly = 0) {
             paymentProvider.charge(paidInvoice)
@@ -52,7 +52,7 @@ class BillingServiceTest {
     }
 
     @Test
-    fun `will NOT call dal to set status to paid, when PaymentProvider returns false`() {
+    fun `will NOT call dal to set status to PAID, when PaymentProvider returns false`() {
         every { paymentProvider.charge(any()) } returns false
 
         sut.payAllInvoices()
@@ -65,7 +65,7 @@ class BillingServiceTest {
     }
 
     @Test
-    fun `will NOT call dal to set status to paid, when PaymentProvider throws CustomerNotFoundException`() {
+    fun `will NOT call dal to set status to PAID, when PaymentProvider throws CustomerNotFoundException`() {
         every { paymentProvider.charge(pendingInvoice) } throws CustomerNotFoundException(pendingInvoice.id)
 
         sut.payAllInvoices()
@@ -78,7 +78,20 @@ class BillingServiceTest {
     }
 
     @Test
-    fun `will NOT call dal to set status to paid, when PaymentProvider throws CurrencyMismatchException`() {
+    fun `will call dal to set status to ERROR, when PaymentProvider throws CustomerNotFoundException`() {
+        every { paymentProvider.charge(pendingInvoice) } throws CustomerNotFoundException(pendingInvoice.id)
+
+        sut.payAllInvoices()
+        verify(exactly = 1) {
+            paymentProvider.charge(pendingInvoice)
+        }
+        verify(exactly = 1) {
+            dal.updateInvoice(pendingInvoice.id, InvoiceStatus.ERROR)
+        }
+    }
+
+    @Test
+    fun `will NOT call dal to set status to PAID, when PaymentProvider throws CurrencyMismatchException`() {
         every { paymentProvider.charge(pendingInvoice) } throws CurrencyMismatchException(pendingInvoice.id, pendingInvoice.customerId)
 
         sut.payAllInvoices()
@@ -91,7 +104,20 @@ class BillingServiceTest {
     }
 
     @Test
-    fun `will NOT call dal to set status to paid, when PaymentProvider throws NetworkException`() {
+    fun `will calls dal to set status to ERROR, when PaymentProvider throws CurrencyMismatchException`() {
+        every { paymentProvider.charge(pendingInvoice) } throws CurrencyMismatchException(pendingInvoice.id, pendingInvoice.customerId)
+
+        sut.payAllInvoices()
+        verify(exactly = 1) {
+            paymentProvider.charge(pendingInvoice)
+        }
+        verify(exactly = 1) {
+            dal.updateInvoice(pendingInvoice.id, InvoiceStatus.ERROR)
+        }
+    }
+
+    @Test
+    fun `will NOT call dal to set status to PAID, when PaymentProvider throws NetworkException`() {
         every { paymentProvider.charge(pendingInvoice) } throws NetworkException()
 
         sut.payAllInvoices()
