@@ -28,7 +28,7 @@ class MonthlyScheduler {
             }
         }
         //Run at beginning of next day and then consecutive day
-//        Timer().schedule(task, 1000, 30000)
+        //Timer().schedule(task, 1000, 30000)
         Timer().schedule(task, getMillisecondsUntilStartOfTomorrow(), 24*60*60*1000)
     }
 
