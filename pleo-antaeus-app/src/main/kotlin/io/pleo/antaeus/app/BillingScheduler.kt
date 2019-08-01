@@ -36,7 +36,7 @@ class MonthlyScheduler {
      * Checks if today is the first of the month. If it is we run the billing.
      */
     private fun todayIsFirstDayOfMonth(): Boolean {
-        val now = ZonedDateTime.now()
+        val now = ZonedDateTime.now(ZoneId.systemDefault())
         val dateNow = now.toLocalDate()
         return dateNow == dateNow.with(TemporalAdjusters.firstDayOfMonth())
     }
@@ -48,7 +48,7 @@ class MonthlyScheduler {
      * so we wait till tomorrow and check again every 24 hours
      */
     private fun getMillisecondsUntilStartOfTomorrow(): Long{
-        val now = ZonedDateTime.now()
+        val now = ZonedDateTime.now(ZoneId.systemDefault())
         val tomorrow = now.toLocalDate().plusDays(1)
         val tomorrowStart = tomorrow.atStartOfDay(ZoneId.systemDefault())
         val millisToTomorrow = Duration.between( now , tomorrowStart ).toMillis()
