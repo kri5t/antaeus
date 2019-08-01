@@ -35,9 +35,9 @@ fun main() {
             TransactionManager.manager.defaultIsolationLevel = Connection.TRANSACTION_SERIALIZABLE
             transaction(it) {
                 addLogger(StdOutSqlLogger)
-                // Drop all existing tables to ensure a clean slate on each run
+                // Drop all existing tables to ensure a clean slate on each run.
                 SchemaUtils.drop(*tables)
-                // Create all tables
+                // Create all tables.
                 SchemaUtils.create(*tables)
             }
         }
@@ -48,20 +48,18 @@ fun main() {
     // Insert example data in the database.
     setupInitialData(dal = dal)
 
-    // Get third parties
-    val paymentProvider = getPaymentProvider()
-
-    // Create core services
+    // Create core services.
     val invoiceService = InvoiceService(dal = dal)
     val customerService = CustomerService(dal = dal)
 
-    // This is _your_ billing service to be included where you see fit
-    val billingService = BillingService(paymentProvider = paymentProvider)
+    //Setup monthly billing
+    val billingService = BillingService(paymentProvider = getPaymentProvider(), dal = dal)
+    billingService.resetInvoices() //Resetting invoices as a part of testing. Probably a bad idea in production :)?
+    MonthlyScheduler().schedule(billingService)
 
-    // Create REST web service
+    // Create REST web service.
     AntaeusRest(
         invoiceService = invoiceService,
         customerService = customerService
     ).run()
 }
-
