@@ -9,11 +9,17 @@ import io.pleo.antaeus.models.Invoice
 import io.pleo.antaeus.models.InvoiceStatus
 import kotlinx.coroutines.*
 import mu.KotlinLogging
+import java.lang.Runnable
 
 class BillingService(
     private val paymentProvider: PaymentProvider,
-    private val dal: AntaeusDal
-) {
+    private val dal: AntaeusDal,
+    private val timeout: Long = 1000
+) : Runnable {
+    override fun run() {
+        payAllInvoices()
+    }
+
     private val logger = KotlinLogging.logger {}
 
     /*
@@ -22,20 +28,25 @@ class BillingService(
    fun payAllInvoices() {
         dal.fetchInvoices()
             .filter { invoice -> invoice.status == InvoiceStatus.PENDING }
-            .forEach { invoice -> payInvoice(invoice) }
+            .forEachParallel { invoice -> payInvoice(invoice) }
    }
 
-    private fun payInvoice(invoice: Invoice, attempt: Int = 0){
-        GlobalScope.launch  {
-            try {
-                val paid = withContext(Dispatchers.Default) { paymentProvider.charge(invoice) }
-                if (paid)
-                    dal.updateInvoice(invoice.id, InvoiceStatus.PAID)
-                else
-                    dal.updateInvoice(invoice.id, InvoiceStatus.ERROR)
-            } catch(e: Exception){
-                handleException(e, invoice, attempt)
+    /*
+     * Pay a specific invoice
+     *
+     * attempt - represents how many times this method has been called recursively
+     */
+    private suspend fun payInvoice(invoice: Invoice, attempt: Int = 0){
+        try {
+            val paid = withContext(Dispatchers.Default) {
+                paymentProvider.charge(invoice)
             }
+            if (paid)
+                dal.updateInvoice(invoice.id, InvoiceStatus.PAID)
+            else
+                dal.updateInvoice(invoice.id, InvoiceStatus.ERROR)
+        } catch(e: Exception){
+            handleException(e, invoice, attempt)
         }
     }
 
@@ -61,7 +72,7 @@ class BillingService(
             is NetworkException -> {
                 //If it is a network exception we will retry 5 times before giving up
                 if(attempt < 5){
-                    delay((1000 * attempt).toLong())
+                    delay((timeout * attempt))
                     payInvoice(invoice, attempt + 1)
                 } else {
                     logger.error { "Failed to pay invoice id: ${invoice.id}. After $attempt retries" }
@@ -70,5 +81,9 @@ class BillingService(
             }
             else -> throw e
         }
+    }
+
+    private fun <A>Collection<A>.forEachParallel(f: suspend (A) -> Unit): Unit = runBlocking {
+        map { async { f(it) } }.forEach { it.await() }
     }
 }
