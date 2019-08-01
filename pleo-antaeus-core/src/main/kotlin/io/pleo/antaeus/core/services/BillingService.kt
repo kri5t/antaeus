@@ -17,18 +17,45 @@ class BillingService(
     private val timeout: Long = 1000
 ) : Runnable {
     override fun run() {
-        payAllInvoices()
+        try {
+            payAllInvoices()
+        } catch(e: Exception){
+            /*
+             * Right now I just eat all the exceptions to keep the scheduled job running
+             *
+             * We should build an exception sink and shoot messages to some sort of logging
+             * to be able to debug when an unhandled exception is bubbled out here.
+             */
+            logger.error(e) { "Eating all the exceptions to keep the cron job running" }
+        }
     }
 
     private val logger = KotlinLogging.logger {}
 
     /*
      * Pay all invoices that are pending in the system
+     *
+     * We run the payments in parallel because we are contacting an external provider
+     * and might need delays on payments when waiting for the request to happen.
+     *
+     * If we had a huge number of items being payed we might thing about throttling how many
+     * invoice payments we are doing at the same time
      */
    fun payAllInvoices() {
         dal.fetchInvoices()
-            .filter { invoice -> invoice.status == InvoiceStatus.PENDING }
-            .forEachParallel { invoice -> payInvoice(invoice) }
+                .filter { invoice -> invoice.status == InvoiceStatus.PENDING }
+                .forEachParallel { invoice -> payInvoice(invoice) }
+        logger.info { "Done charging all the pending invoices" }
+   }
+
+    /*
+     * Reset the invoices
+     *
+     * This is only used as a part of testing the code.
+     */
+   fun resetInvoices() {
+        dal.fetchInvoices()
+            .forEach { invoice -> dal.updateInvoice(invoice.id, InvoiceStatus.PENDING) }
    }
 
     /*
@@ -41,10 +68,14 @@ class BillingService(
             val paid = withContext(Dispatchers.Default) {
                 paymentProvider.charge(invoice)
             }
-            if (paid)
+            if (paid) {
+                logger.info { "Payment went through on invoice id: ${invoice.id}" }
                 dal.updateInvoice(invoice.id, InvoiceStatus.PAID)
-            else
+            }
+            else {
+                logger.info { "Payment was declined by payment provider: ${invoice.id}" }
                 dal.updateInvoice(invoice.id, InvoiceStatus.ERROR)
+            }
         } catch(e: Exception){
             handleException(e, invoice, attempt)
         }
@@ -61,12 +92,12 @@ class BillingService(
     private suspend fun handleException(e: Exception, invoice: Invoice, attempt: Int) {
         when(e) {
             is CustomerNotFoundException -> {
-                logger.error { "Payment provider was not able to identify customer with id ${invoice.customerId} " +
+                logger.error(e) { "Payment provider was not able to identify customer with id ${invoice.customerId} " +
                         "on invoice id ${invoice.id}" }
                 dal.updateInvoice(invoice.id, InvoiceStatus.ERROR)
             }
             is CurrencyMismatchException -> {
-                logger.error { "There was a mismatch in current on invoice id ${invoice.id}" }
+                logger.error(e) { "There was a mismatch in current on invoice id ${invoice.id}" }
                 dal.updateInvoice(invoice.id, InvoiceStatus.ERROR)
             }
             is NetworkException -> {
@@ -75,7 +106,7 @@ class BillingService(
                     delay((timeout * attempt))
                     payInvoice(invoice, attempt + 1)
                 } else {
-                    logger.error { "Failed to pay invoice id: ${invoice.id}. After $attempt retries" }
+                    logger.error(e) { "Failed to pay invoice id: ${invoice.id}. After $attempt retries" }
                     dal.updateInvoice(invoice.id, InvoiceStatus.ERROR)
                 }
             }
@@ -83,6 +114,9 @@ class BillingService(
         }
     }
 
+    /*
+     * Helper method to run the collection of invoices in parallel
+     */
     private fun <A>Collection<A>.forEachParallel(f: suspend (A) -> Unit): Unit = runBlocking {
         map { async { f(it) } }.forEach { it.await() }
     }
